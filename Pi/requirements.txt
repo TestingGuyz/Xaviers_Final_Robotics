@@ -1,0 +1,7 @@
+flask>=3.0
+python-dotenv
+opencv-python-headless
+numpy
+requests
+pyserial
+werkzeug

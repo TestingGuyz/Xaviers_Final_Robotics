@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robo Xavier Hub — Multi-Model Disaster AI</title>
+<meta name="description" content="Unified disaster response hub with multi-model AI inference, GPS dispatch, and OpenStreetMap zone tracking">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root{--bg:#0a0e1a;--panel:rgba(15,23,42,0.85);--primary:#3b82f6;--accent:#10b981;--red:#ef4444;--yellow:#eab308;--green:#22c55e;--text:#f1f5f9;--muted:#64748b;--border:rgba(51,65,85,0.6);--glass:blur(14px)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+header{background:rgba(2,6,23,0.85);backdrop-filter:var(--glass);border-bottom:1px solid var(--border);padding:.9rem 2rem;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:1000}
+.logo{font-size:1.5rem;font-weight:800;background:linear-gradient(135deg,#38bdf8,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.gps-badge{display:flex;align-items:center;gap:.5rem;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);padding:.45rem .9rem;border-radius:2rem;font-size:.8rem;font-weight:600;cursor:pointer}
+.gps-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite}
+.gps-dot.no-fix{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.3)}}
+.main-grid{display:grid;grid-template-columns:360px 1fr 360px;height:calc(100vh - 56px)}
+@media(max-width:1100px){.main-grid{grid-template-columns:1fr;height:auto}}
+.sidebar{background:var(--panel);backdrop-filter:var(--glass);border-right:1px solid var(--border);padding:1.1rem;overflow-y:auto}
+#map{width:100%;height:100%;min-height:420px}
+.dispatch-panel{background:var(--panel);backdrop-filter:var(--glass);border-left:1px solid var(--border);padding:1.1rem;overflow-y:auto}
+.section-title{font-size:1rem;font-weight:700;margin-bottom:.8rem;padding-bottom:.5rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.4rem}
+.upload-zone{border:2px dashed #334155;border-radius:.75rem;padding:1.2rem;text-align:center;cursor:pointer;transition:all .3s;position:relative;margin-bottom:.8rem}
+.upload-zone:hover{border-color:var(--primary);background:rgba(59,130,246,0.05)}
+.upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.file-name{color:var(--accent);font-weight:600;margin-top:.3rem;font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cg{margin-bottom:.8rem}
+.cg label{display:block;font-size:.75rem;font-weight:600;color:var(--muted);margin-bottom:.25rem;text-transform:uppercase;letter-spacing:.5px}
+.cg input[type=text]{width:100%;padding:.5rem .65rem;border-radius:.45rem;border:1px solid var(--border);background:#0f172a;color:var(--text);font-size:.8rem;font-family:monospace;margin-bottom:.3rem}
+.cg input:focus{outline:2px solid var(--primary)}
+.cg input:last-child{margin-bottom:0}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:.3rem}
+.model-checks{display:flex;flex-direction:column;gap:.35rem;margin:.4rem 0}
+.model-checks label{display:flex;align-items:center;gap:.5rem;font-size:.8rem;cursor:pointer}
+.model-checks input{accent-color:var(--primary);width:.95rem;height:.95rem}
+.mode-row{display:flex;gap:1rem;margin:.4rem 0;font-size:.8rem}
+.mode-row label{display:flex;align-items:center;gap:.3rem;cursor:pointer}
+.btn{width:100%;padding:.65rem;border:none;border-radius:.55rem;font-weight:700;font-size:.85rem;cursor:pointer;transition:all .2s;letter-spacing:.5px}
+.btn-primary{background:linear-gradient(135deg,var(--primary),#6366f1);color:#fff;box-shadow:0 4px 15px rgba(59,130,246,.3)}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(59,130,246,.4)}
+.btn-primary:disabled{background:#334155;cursor:not-allowed;box-shadow:none;transform:none}
+.btn-danger{background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff}
+.loader{display:none;width:22px;height:22px;border:3px solid rgba(255,255,255,.1);border-top:3px solid var(--primary);border-radius:50%;animation:spin .8s linear infinite;margin:.8rem auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+.result-media{width:100%;border-radius:.5rem;margin-top:.6rem;max-height:220px;object-fit:contain;background:#000;display:none}
+.summary-box{background:rgba(59,130,246,0.08);border-left:3px solid var(--primary);padding:.7rem;border-radius:0 .5rem .5rem 0;margin-top:.7rem;font-size:.78rem;display:none}
+.summary-box h4{color:#38bdf8;margin-bottom:.25rem;font-size:.8rem}
+.summary-box p{color:#94a3b8;line-height:1.5}
+.json-box{background:#020617;color:#34d399;padding:.7rem;border-radius:.45rem;font-family:monospace;font-size:.68rem;white-space:pre-wrap;border:1px solid #064e3b;max-height:180px;overflow-y:auto;margin-top:.7rem}
+/* Dispatch */
+.legend{display:flex;gap:.7rem;margin:.6rem 0;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:.3rem;font-size:.75rem;color:var(--muted)}
+.legend-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+.zone-card{background:rgba(15,23,42,0.6);border-radius:.65rem;padding:.85rem;margin-bottom:.65rem;border-left:4px solid var(--muted);transition:border-color .3s}
+.zone-card.red{border-left-color:var(--red);background:rgba(239,68,68,0.07)}
+.zone-card.yellow{border-left-color:var(--yellow);background:rgba(234,179,8,0.07)}
+.zone-card.green{border-left-color:var(--green);background:rgba(34,197,94,0.07)}
+.zone-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem}
+.zone-id{font-weight:700;font-size:.88rem}
+.zone-priority{font-size:.7rem;font-weight:700;padding:.18rem .5rem;border-radius:1rem;color:#fff}
+.p1{background:var(--red)}.p2{background:#f97316}.p3{background:var(--yellow);color:#000}.p4{background:var(--green);color:#000}
+.zone-action{font-size:.78rem;color:#cbd5e1;line-height:1.4;margin:.35rem 0}
+.zone-coords{font-size:.7rem;color:var(--muted);font-family:monospace}
+.zone-bar{height:5px;border-radius:3px;background:#1e293b;margin:.4rem 0;overflow:hidden}
+.zone-bar-fill{height:100%;border-radius:3px;transition:width .5s}
+.ov-row{margin-top:.45rem;display:flex;gap:.3rem;flex-wrap:wrap}
+.ov-btn{padding:.25rem .5rem;border:1px solid var(--border);border-radius:.35rem;background:transparent;color:var(--text);font-size:.68rem;cursor:pointer;transition:all .2s}
+.ov-btn:hover{background:rgba(59,130,246,.2);border-color:var(--primary)}
+.ov-form{display:none;margin-top:.4rem}
+.ov-form textarea{width:100%;padding:.35rem;border-radius:.35rem;border:1px solid var(--border);background:#0f172a;color:var(--text);font-size:.75rem;resize:none;height:46px}
+.ov-form .btn{padding:.35rem;font-size:.7rem;margin-top:.25rem}
+.empty-state{text-align:center;color:var(--muted);padding:2rem 1rem}
+.empty-state .icon{font-size:2.2rem;margin-bottom:.5rem}
+.live-preview{width:100%;border-radius:.5rem;background:#000;display:none;margin-top:.6rem;position:relative}
+.live-preview video,.live-preview img{width:100%;border-radius:.5rem;display:block}
+.live-badge{position:absolute;top:.4rem;left:.4rem;background:var(--red);color:#fff;font-size:.65rem;font-weight:700;padding:.2rem .5rem;border-radius:1rem;display:flex;align-items:center;gap:.3rem;z-index:2}
+.live-pulse{width:7px;height:7px;border-radius:50%;background:#fff;animation:pulse 1s infinite}
+.btn-live{background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;margin-top:.5rem}
+.btn-live.active{background:linear-gradient(135deg,#16a34a,#15803d)}
+.live-stat{font-size:.71rem;color:var(--muted);margin-top:.3rem;line-height:1.4;min-height:.9rem}
+.live-age{position:absolute;top:.4rem;right:.4rem;background:rgba(0,0,0,0.6);color:#fff;font-size:.65rem;font-weight:700;padding:.2rem .5rem;border-radius:.3rem;z-index:2;border:1px solid var(--border)}
+.live-age.fresh{color:#4ade80;border-color:#4ade80}
+.live-age.stale{color:#facc15;border-color:#facc15}
+.live-age.old{color:#f87171;border-color:#f87171}
+.live-alert{position:absolute;top:2.5rem;left:.4rem;right:.4rem;background:rgba(220,38,38,0.9);color:#fff;font-size:.85rem;font-weight:800;padding:.4rem;border-radius:.3rem;z-index:2;text-align:center;display:none;border:2px solid #ef4444;box-shadow:0 4px 12px rgba(220,38,38,0.4)}
+.tabs{display:flex;background:#0f172a;border-radius:.5rem;padding:.2rem;margin-bottom:.8rem}
+.tab{flex:1;text-align:center;padding:.4rem;font-size:.75rem;font-weight:700;color:var(--muted);cursor:pointer;border-radius:.3rem;transition:0.2s}
+.tab.active{background:var(--primary);color:#fff}
+.tab-content{display:none}
+.tab-content.active{display:block}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:#0f172a}
+::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#475569}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">⚡ Robo Xavier Hub</div>
+  <div class="gps-badge" id="gpsBadge" onclick="requestBrowserLocation()" title="Click to refresh location">
+    <div class="gps-dot no-fix" id="gpsDot"></div>
+    <span id="gpsStatus">Click for location</span>
+  </div>
+</header>
+
+<div class="main-grid">
+  <!-- LEFT: Upload & Config -->
+  <div class="sidebar">
+    <div class="section-title">📡 Data Source</div>
+    
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('upload')">📁 Upload Media</div>
+      <div class="tab" onclick="switchTab('live')">📷 Live Feed</div>
+    </div>
+
+    <!-- UPLOAD PANEL -->
+    <div id="tab-upload" class="tab-content active">
+      <form id="uploadForm">
+        <div class="upload-zone">
+          <div style="font-size:1.6rem">🛰️</div>
+          <div style="font-size:.8rem;color:var(--muted)">Drop image / video or click</div>
+          <input type="file" id="fileInput" accept="image/*,video/mp4,video/avi,video/mov,video/webm,video/quicktime">
+          <div class="file-name" id="fileInfo"></div>
+        </div>
+        <button type="submit" id="submitBtn" class="btn btn-primary" disabled style="margin-top:.8rem">INITIALIZE INFERENCE 🚀</button>
+        <div class="loader" id="loader"></div>
+      </form>
+    </div>
+
+    <!-- LIVE FEED PANEL -->
+    <div id="tab-live" class="tab-content">
+      <div style="font-size:.73rem;color:var(--muted);margin-bottom:.5rem;line-height:1.4;background:rgba(59,130,246,0.1);padding:.5rem;border-radius:.3rem;border:1px solid rgba(59,130,246,0.2)">
+        Captures 1 frame every <b>2 seconds</b> asynchronously. Real-time overlay activated.
+      </div>
+      <button class="btn btn-live" id="liveBtn">▶ START LIVE FEED</button>
+      <div class="live-stat" id="liveStat">Webcam off</div>
+      <div class="live-preview" id="livePreview">
+        <div class="live-badge"><div class="live-pulse"></div>LIVE</div>
+        <div class="live-age" id="liveAge">Analysis age: --s</div>
+        <div class="live-alert" id="liveAlert">⚠ ALERT</div>
+        <div style="position:relative;width:100%;border-radius:.5rem;overflow:hidden;">
+          <video id="liveCam" autoplay muted playsinline></video>
+          <canvas id="overlayCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;"></canvas>
+        </div>
+        <canvas id="liveCanvas" style="display:none"></canvas>
+      </div>
+    </div>
+
+    <div style="margin-top:1rem;padding-top:.8rem;border-top:1px solid var(--border)"></div>
+
+    <!-- COMMON CONFIGURATION -->
+    <div class="cg">
+        <label>GPS Coordinates (from device or manual)</label>
+        <div class="row2">
+          <input type="text" id="latInput" placeholder="Latitude">
+          <input type="text" id="lonInput" placeholder="Longitude">
+        </div>
+      </div>
+
+      <div class="cg">
+        <label>Colab Model URLs</label>
+        <input type="text" id="url_model1" placeholder="Model 1 — xView2 (Colab URL)">
+        <input type="text" id="url_model2" placeholder="Model 2 — Fire/Smoke (Colab URL)">
+        <input type="text" id="url_model3" placeholder="Model 3 — LADI-v2 (Colab URL)">
+      </div>
+
+      <div class="cg">
+        <label>Models to Run</label>
+        <div class="mode-row">
+          <label><input type="radio" name="mode" id="mode_all" value="all" checked> All Models</label>
+          <label><input type="radio" name="mode" id="mode_sel" value="selective"> Selective</label>
+        </div>
+        <div class="model-checks" id="modelSelectDiv" style="opacity:.4;pointer-events:none">
+          <label><input type="checkbox" class="model-cb" value="model1" checked> Model 1 — xView2 Damage (Colab)</label>
+          <label><input type="checkbox" class="model-cb" value="model2" checked> Model 2 — Fire &amp; Smoke (Colab/Local)</label>
+          <label><input type="checkbox" class="model-cb" value="model3" checked> Model 3 — LADI-v2 (Colab)</label>
+          <label><input type="checkbox" class="model-cb" value="model4" checked> Model 4 — Ambulance (Roboflow)</label>
+          <label><input type="checkbox" class="model-cb" value="model5" checked> Model 5 — Safety Vest (Roboflow)</label>
+          <label><input type="checkbox" class="model-cb" value="model6" checked> Model 6 — Groq Vision AI</label>
+        </div>
+      </div>
+
+    <div class="summary-box" id="summaryBox">
+      <h4>👁️ Vision Verification</h4>
+      <p id="visionText"></p>
+      <h4 style="margin-top:.5rem;color:var(--accent)">🧠 Groq Summary</h4>
+      <p id="summaryText"></p>
+    </div>
+
+    <img id="resultImg" class="result-media"/>
+    <video id="resultVid" class="result-media" controls></video>
+
+    <div style="font-size:.78rem;color:var(--muted);margin-top:.8rem;font-weight:600">RAW TELEMETRY</div>
+    <div class="json-box" id="jsonOutput">// Awaiting inference...</div>
+  </div>
+
+  <!-- CENTER: MAP -->
+  <div id="map"></div>
+
+  <!-- RIGHT: DISPATCH -->
+  <div class="dispatch-panel">
+    <div class="section-title">🚨 Dispatch Console</div>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div> Buildings + Roads</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div> Roads Only</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div> Clear</div>
+    </div>
+    <button class="btn btn-danger" id="clearZonesBtn" style="font-size:.75rem;padding:.45rem;margin-bottom:.8rem">🗑️ CLEAR ALL ZONES</button>
+    <div id="zonesList">
+      <div class="empty-state"><div class="icon">📡</div><div>No zones yet.<br>Upload media to begin dispatch.</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- TABS ----
+function switchTab(tabId) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.querySelector(`.tab[onclick="switchTab('${tabId}')"]`).classList.add('active');
+  document.getElementById('tab-' + tabId).classList.add('active');
+}
+
+// ---- MAP ----
+const map = L.map('map').setView([20.5937, 78.9629], 5);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors', maxZoom: 19
+}).addTo(map);
+const markers = {};
+const colorHex = {red:'#ef4444', yellow:'#eab308', green:'#22c55e'};
+function makeIcon(color) {
+  return L.divIcon({
+    className:'',
+    html:`<div style="width:20px;height:20px;border-radius:50%;background:${colorHex[color]||'#6366f1'};border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.6)"></div>`,
+    iconSize:[20,20], iconAnchor:[10,10]
+  });
+}
+
+// ---- BROWSER GEOLOCATION ----
+function requestBrowserLocation() {
+  if (!navigator.geolocation) {
+    document.getElementById('gpsStatus').textContent = 'Geolocation not supported';
+    return;
+  }
+  document.getElementById('gpsStatus').textContent = 'Acquiring...';
+  navigator.geolocation.getCurrentPosition(pos => {
+    const lat = pos.coords.latitude, lon = pos.coords.longitude;
+    fetch('/gps/browser', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({lat, lon})
+    }).catch(()=>{});
+    document.getElementById('latInput').value = lat.toFixed(6);
+    document.getElementById('lonInput').value = lon.toFixed(6);
+    document.getElementById('gpsStatus').textContent = `${lat.toFixed(4)}, ${lon.toFixed(4)} | Device`;
+    document.getElementById('gpsDot').classList.remove('no-fix');
+    map.setView([lat, lon], 10);
+  }, err => {
+    document.getElementById('gpsStatus').textContent = 'Location denied — enter manually';
+    document.getElementById('gpsDot').classList.add('no-fix');
+  }, {enableHighAccuracy:true, timeout:10000});
+  // Watch for updates
+  navigator.geolocation.watchPosition(pos => {
+    fetch('/gps/browser', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({lat: pos.coords.latitude, lon: pos.coords.longitude})
+    }).catch(()=>{});
+  }, ()=>{}, {enableHighAccuracy:true});
+}
+// Request on load
+requestBrowserLocation();
+
+// ---- MODEL SELECTION TOGGLE ----
+document.getElementById('mode_all').addEventListener('change', () => {
+  document.getElementById('modelSelectDiv').style.opacity = '.4';
+  document.getElementById('modelSelectDiv').style.pointerEvents = 'none';
+});
+document.getElementById('mode_sel').addEventListener('change', () => {
+  document.getElementById('modelSelectDiv').style.opacity = '1';
+  document.getElementById('modelSelectDiv').style.pointerEvents = 'auto';
+});
+
+// ---- FILE INPUT ----
+const fileInput = document.getElementById('fileInput');
+const submitBtn = document.getElementById('submitBtn');
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) {
+    document.getElementById('fileInfo').textContent = fileInput.files[0].name;
+    submitBtn.disabled = false;
+  }
+});
+
+// ---- FORM SUBMIT ----
+document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!fileInput.files.length) return;
+
+  submitBtn.disabled = true;
+  document.getElementById('loader').style.display = 'block';
+  document.getElementById('jsonOutput').textContent = 'Processing... please wait.';
+  document.getElementById('summaryBox').style.display = 'none';
+  document.getElementById('resultImg').style.display = 'none';
+  document.getElementById('resultVid').style.display = 'none';
+
+  const fd = new FormData();
+  fd.append('file', fileInput.files[0]);
+  fd.append('url_model1', document.getElementById('url_model1').value);
+  fd.append('url_model2', document.getElementById('url_model2').value);
+  fd.append('url_model3', document.getElementById('url_model3').value);
+
+  const lat = document.getElementById('latInput').value;
+  const lon = document.getElementById('lonInput').value;
+  if (lat && lon) { fd.append('latitude', lat); fd.append('longitude', lon); }
+
+  if (document.getElementById('mode_all').checked) {
+    fd.append('models', 'all');
+  } else {
+    const sel = Array.from(document.querySelectorAll('.model-cb:checked')).map(c => c.value);
+    fd.append('models', JSON.stringify(sel));
+  }
+
+  try {
+    const res = await fetch('/process', {method:'POST', body:fd});
+    const data = await res.json();
+    document.getElementById('jsonOutput').textContent = JSON.stringify(data.json_output, null, 2);
+
+    // Summary
+    if (data.json_output?.summary) {
+      document.getElementById('visionText').textContent = data.json_output.vision_verification || 'N/A';
+      document.getElementById('summaryText').textContent = data.json_output.summary;
+      document.getElementById('summaryBox').style.display = 'block';
+    }
+    // Image result
+    if (data.type === 'image' && data.image_url) {
+      document.getElementById('resultImg').src = data.image_url + '?t=' + Date.now();
+      document.getElementById('resultImg').style.display = 'block';
+    }
+    // Video result
+    if (data.type === 'video' && data.video_url) {
+      document.getElementById('resultVid').src = data.video_url + '?t=' + Date.now();
+      document.getElementById('resultVid').style.display = 'block';
+      const events = data.json_output?.video_events;
+      if (events?.length) {
+        const last = events[events.length - 1];
+        if (last.results?.summary) {
+          document.getElementById('visionText').textContent = last.results.vision_verification || 'N/A';
+          document.getElementById('summaryText').textContent = last.results.summary;
+          document.getElementById('summaryBox').style.display = 'block';
+        }
+      }
+    }
+    refreshZones();
+  } catch (err) {
+    document.getElementById('jsonOutput').textContent = 'Error: ' + err.message;
+  } finally {
+    submitBtn.disabled = false;
+    document.getElementById('loader').style.display = 'none';
+  }
+});
+
+// ---- ZONES ----
+function refreshZones() {
+  fetch('/zones').then(r => r.json()).then(data => {
+    const list = document.getElementById('zonesList');
+    if (!data.zones?.length) {
+      list.innerHTML = '<div class="empty-state"><div class="icon">📡</div><div>No zones yet.</div></div>';
+      Object.keys(markers).forEach(k => { map.removeLayer(markers[k]); delete markers[k]; });
+      return;
+    }
+    list.innerHTML = '';
+    Object.keys(markers).forEach(k => { map.removeLayer(markers[k]); delete markers[k]; });
+
+    data.zones.forEach(z => {
+      const pc = z.priority <= 1 ? 'p1' : z.priority <= 2 ? 'p2' : z.priority <= 3 ? 'p3' : 'p4';
+      const pct = Math.min((z.score / 0.5) * 100, 100).toFixed(1);
+      const bc = z.color === 'red' ? 'var(--red)' : z.color === 'yellow' ? 'var(--yellow)' : 'var(--green)';
+
+      const card = document.createElement('div');
+      card.className = `zone-card ${z.color}`;
+      card.innerHTML = `
+        <div class="zone-header">
+          <span class="zone-id">${z.zone_id}</span>
+          <span class="zone-priority ${pc}">Priority ${z.priority}</span>
+        </div>
+        <div class="zone-bar"><div class="zone-bar-fill" style="width:${pct}%;background:${bc}"></div></div>
+        <div class="zone-action">📋 ${z.override ? '⚠️ ' : ''}${z.action}</div>
+        <div class="zone-coords">📍 ${z.lat?.toFixed(5)||'?'}, ${z.lon?.toFixed(5)||'?'} &nbsp;|&nbsp; Score: ${z.score.toFixed(4)}</div>
+        <div class="ov-row">
+          <button class="ov-btn" onclick="toggleOvForm('${z.zone_id}')">✏️ Override</button>
+          <button class="ov-btn" onclick="setZoneColor('${z.zone_id}','red')">🔴</button>
+          <button class="ov-btn" onclick="setZoneColor('${z.zone_id}','yellow')">🟡</button>
+          <button class="ov-btn" onclick="setZoneColor('${z.zone_id}','green')">🟢</button>
+        </div>
+        <div class="ov-form" id="ovf-${z.zone_id}">
+          <textarea id="ovt-${z.zone_id}" placeholder="New dispatch action..."></textarea>
+          <button class="btn btn-primary" onclick="submitOverride('${z.zone_id}')">APPLY</button>
+        </div>`;
+      list.appendChild(card);
+
+      if (z.lat && z.lon) {
+        const m = L.marker([z.lat, z.lon], {icon: makeIcon(z.color)}).addTo(map);
+        m.bindPopup(`<b>${z.zone_id}</b> — Priority ${z.priority}<br><small>${z.action}</small><br><code>${z.lat.toFixed(5)}, ${z.lon.toFixed(5)}</code>`);
+        markers[z.zone_id] = m;
+      }
+    });
+
+    const pts = data.zones.filter(z => z.lat && z.lon).map(z => [z.lat, z.lon]);
+    if (pts.length) map.fitBounds(pts, {padding:[40,40], maxZoom:13});
+  });
+}
+
+function toggleOvForm(zid) {
+  const el = document.getElementById('ovf-' + zid);
+  el.style.display = el.style.display === 'block' ? 'none' : 'block';
+}
+function submitOverride(zid) {
+  const txt = document.getElementById('ovt-' + zid).value.trim();
+  if (!txt) return;
+  fetch('/zones/override', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({zone_id: zid, action: txt})
+  }).then(() => refreshZones());
+}
+function setZoneColor(zid, color) {
+  fetch('/zones/override', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({zone_id: zid, color})
+  }).then(() => refreshZones());
+}
+document.getElementById('clearZonesBtn').addEventListener('click', () => {
+  if (confirm('Clear all zones from dispatch?')) {
+    fetch('/zones/clear', {method:'POST'}).then(() => refreshZones());
+  }
+});
+
+refreshZones();
+
+// ---- LIVE FEED — Latest-Frame Wins ----
+// Browser pushes a frame every 2s (fire-and-forget, returns immediately)
+// Backend worker always grabs the NEWEST frame → stale frames are dropped
+// Browser polls /live_status every 2s to get whatever result is ready
+const PUSH_INTERVAL_MS   = 2000;  // how often to push a new frame
+const POLL_INTERVAL_MS   = 2000;  // how often to poll for results
+
+let liveStream = null, livePushTimer = null, livePollTimer = null, liveRunning = false;
+let lastResultTimestamp = null, ageInterval = null;
+
+const liveBtn       = document.getElementById('liveBtn');
+const liveStat      = document.getElementById('liveStat');
+const liveCam       = document.getElementById('liveCam');
+const liveCanvas    = document.getElementById('liveCanvas');
+const livePreview   = document.getElementById('livePreview');
+const overlayCanvas = document.getElementById('overlayCanvas');
+const liveAge       = document.getElementById('liveAge');
+const liveAlert     = document.getElementById('liveAlert');
+
+function updateAge() {
+  if (!lastResultTimestamp) return;
+  const age = (Date.now() - lastResultTimestamp) / 1000;
+  liveAge.textContent = `Analysis age: ${age.toFixed(1)}s`;
+  liveAge.className = 'live-age ' + (age < 15 ? 'fresh' : age < 30 ? 'stale' : 'old');
+}
+
+liveBtn.addEventListener('click', async () => {
+  if (!liveRunning) {
+    try {
+      liveStream = await navigator.mediaDevices.getUserMedia({video:{width:640,height:480},audio:false});
+      liveCam.srcObject = liveStream;
+      liveCam.style.display = 'block';
+      livePreview.style.display = 'block';
+      
+      const ctx = overlayCanvas.getContext('2d');
+      ctx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height);
+      
+      liveRunning = true;
+      liveBtn.textContent = '⏹ STOP LIVE FEED';
+      liveBtn.classList.add('active');
+      liveStat.textContent = '📡 Streaming — worker will process newest frame...';
+
+      // Start pushing frames (fire-and-forget)
+      pushFrame();
+      livePushTimer = setInterval(pushFrame, PUSH_INTERVAL_MS);
+
+      // Start polling for results
+      livePollTimer = setInterval(pollLiveResult, POLL_INTERVAL_MS);
+      
+      // Update Age UI
+      ageInterval = setInterval(updateAge, 100);
+
+    } catch(err) {
+      liveStat.textContent = '❌ Camera error: ' + err.message;
+    }
+  } else { stopLive(); }
+});
+
+function stopLive() {
+  liveRunning = false;
+  clearInterval(livePushTimer);
+  clearInterval(livePollTimer);
+  clearInterval(ageInterval);
+  if (liveStream) liveStream.getTracks().forEach(t => t.stop());
+  liveStream = null;
+  livePreview.style.display = 'none';
+  liveBtn.textContent = '▶ START LIVE FEED';
+  liveBtn.classList.remove('active');
+  liveStat.textContent = 'Webcam off';
+  
+  lastResultTimestamp = null;
+  liveAge.textContent = 'Analysis age: --s';
+  liveAge.className = 'live-age';
+  liveAlert.style.display = 'none';
+}
+
+function getModels() {
+  return document.getElementById('mode_all').checked
+    ? ['model1','model2','model3','model4','model5','model6']
+    : Array.from(document.querySelectorAll('.model-cb:checked')).map(c => c.value);
+}
+
+function pushFrame() {
+  if (!liveRunning || !liveCam.videoWidth) return;
+  const vw = liveCam.videoWidth, vh = liveCam.videoHeight;
+  liveCanvas.width = vw; liveCanvas.height = vh;
+  liveCanvas.getContext('2d').drawImage(liveCam, 0, 0, vw, vh);
+  const frameB64 = liveCanvas.toDataURL('image/jpeg', 0.7);
+
+  // Fire and forget — don't await, don't block
+  fetch('/live_push', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      frame: frameB64,
+      lat: document.getElementById('latInput').value || null,
+      lon: document.getElementById('lonInput').value || null,
+      models: getModels(),
+      url_model1: document.getElementById('url_model1').value,
+      url_model2: document.getElementById('url_model2').value,
+      url_model3: document.getElementById('url_model3').value,
+    })
+  }).catch(()=>{});
+}
+
+function drawOverlay(detections) {
+  if (liveCam.videoWidth === 0) return;
+  overlayCanvas.width = liveCam.videoWidth;
+  overlayCanvas.height = liveCam.videoHeight;
+  
+  const ctx = overlayCanvas.getContext('2d');
+  ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  
+  if (!detections) return;
+  
+  detections.forEach(d => {
+    if(!d.box) return;
+    const {xmin, ymin, xmax, ymax} = d.box;
+    ctx.strokeStyle = '#3b82f6';
+    if (d.class.toLowerCase().includes('fire') || d.class.toLowerCase().includes('smoke')) ctx.strokeStyle = '#ef4444';
+    if (d.class.toLowerCase().includes('ambulance')) ctx.strokeStyle = '#eab308';
+    
+    ctx.lineWidth = 3;
+    ctx.strokeRect(xmin, ymin, xmax - xmin, ymax - ymin);
+    
+    const label = `${d.class} ${(d.confidence*100).toFixed(0)}%`;
+    ctx.font = 'bold 14px Inter, sans-serif';
+    const tw = ctx.measureText(label).width;
+    
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.fillRect(xmin, ymin - 22, tw + 8, 22);
+    
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, xmin + 4, ymin - 6);
+  });
+}
+
+function pollLiveResult() {
+  if (!liveRunning) return;
+  fetch('/live_status').then(r => r.json()).then(data => {
+    if (!data || data.status === 'idle') {
+      liveStat.textContent = '⏳ Worker idle — waiting for first frame result...';
+      return;
+    }
+    const busy   = data.worker_busy ? '⚙️ Analyzing...' : '✅ Ready';
+    const recv   = data.frames_received  || 0;
+    const proc   = data.frames_processed || 0;
+    const drop   = data.frames_dropped   || 0;
+
+    if (data.status === 'ok' && data.zone) {
+      if (data.zone.timestamp && data.zone.timestamp !== window.lastDataTimestamp) {
+        lastResultTimestamp = Date.now();
+        window.lastDataTimestamp = data.zone.timestamp;
+        drawOverlay(data.detections);
+      }
+
+      const z = data.zone;
+      const emoji = z.color==='red'?'🔴':z.color==='yellow'?'🟡':'🟢';
+      liveStat.textContent =
+        `${emoji} ${z.zone_id} | Score: ${z.score.toFixed(4)} | ` +
+        `Recv:${recv} Proc:${proc} Dropped:${drop} | ${busy}`;
+
+      if (z.color === 'red') {
+         liveAlert.textContent = `⚠ ALERT: ${z.action}`;
+         liveAlert.style.display = 'block';
+      } else {
+         liveAlert.style.display = 'none';
+      }
+
+      refreshZones();
+    } else if (data.status === 'error') {
+      liveStat.textContent = `❌ ${data.error} | Dropped:${drop} | ${busy}`;
+    } else {
+      liveStat.textContent = `${busy} | Recv:${recv} Proc:${proc} Dropped:${drop}`;
+    }
+  }).catch(()=>{});
+}
+</script>
+</body>
+</html>
