@@ -1,0 +1,19 @@
+L298N          Pi Zero 2W (BCM)
+ENA    →  GPIO12   (PWM - left motor speed)
+IN1    →  GPIO5
+IN2    →  GPIO6
+IN3    →  GPIO13
+IN4    →  GPIO19
+ENB    →  GPIO26   (PWM - right motor speed)
+
+NEO-6M         Pi Zero 2W
+TX     →  GPIO15 / Pin 10
+VCC    →  3.3V
+GND    →  GND
+
+
+# Install dependencies once
+pip3 install pyserial pynmea2 RPi.GPIO
+
+# Run the test
+python3 gps_auto_return.py
